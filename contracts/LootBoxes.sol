@@ -1,93 +1,116 @@
 // SPDX-License-Identifier: GPL-3.0
-import "@openzeppelin/contracts/ownership/Ownable.sol";
+
+pragma solidity 0.8.4;
+
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
 contract LootBoxes is Ownable {
-    string[3] public items          = ["Dragon Sword", "Silver Sword", "Common Sword"];
-    uint  [3] public probabilities  = [7000, 2100, 400, 400, 50, 50];
-       
-    // mapping (string => uint) private blockLastPurchase;
-    address private _treasury;
+
+    string name;
+    address private treasury = "0xa5E41Dd99960Dbb39497D1e06Fcc2F6A8508BAB1";
+    uint[6] public probabilities  = [69, 16, 8, 4, 2, 1]; //need to be determined
     IERC20 TOKEN;
-    IERC721 NFT;
+    IERC721[] NFT;
     uint256 seed;
-    uint256 constant INVERSE_BASIS_POINT = 10000;
-    uint public price = 1;
-    // Must be sorted by rarity
+    uint256 constant INVERSE_BASIS_POINT = 100;
+    uint public price = 500;
+
     enum Class {
-        Common,
-        Rare,
-        Epic,
-        Legendary,
-        Divine,
-        Hidden
-    }
-    struct Loot {
-        uint gsm;
-        uint[] nft;
+        token,
+        NFT
     }
 
-    uint256 constant NUM_CLASSES = 6;
-    function setProbabilities(uint[] memory _value) external {
-        probabilities = _value;
+    struct Reward{
+        Class class; // Whether token or NFT
+        uint256 amount; //amount of token or NFT
     }
+
+    //Personal info to be claim
+    struct Loot{    
+        uint256 token;
+        uint256[] nft;
+    }
+    
     mapping(address => Loot) public earned;
-    struct OptionSettings {
-        // Number of items to send per open.
-        // Set to 0 to disable this Option.
-        uint256 maxQuantityPerOpen;
-        // Probability in basis points (out of 10,000) of receiving each class (descending)
-        uint16[NUM_CLASSES] classProbabilities;
-        // Whether to enable `guarantees` below
-        bool hasGuaranteedClasses;
-        // Number of items you're guaranteed to get, for each class
-        uint16[NUM_CLASSES] guarantees;
-    }
-
-    event Draws(string item, string screenName);
+    mapping(uint8 => Reward) public rewardList;
 
     event TreasuryUpdated(address previous, address updated);
 
-    constructor(
+    constructor( 
         string memory _name,
-        string memory _symbol,
-        string memory _initBaseURI,
-        address _GSM
-    ) ERC721(_name, _symbol) {
-        GSM = IERC20(_GSM);
-        setBaseURI(_initBaseURI);
-        mint(0xcf9b1f007f246c1D86735941Aeb4eddBc8C0016F, 104);
-    }
-    
-
-    function addItem(string memory itemName, uint8 probability ) public onlyOwner(){
-
+        address _token,
+        address[] _NFT
+        )
+    {
+        TOKEN = IERC20(_token);
+        for(uint i = 0; i < _NFT.length; i ++) {
+            NFT[i] = IERC721(_NFT[i]);
+        }
+        name = _name;
     }
 
     function claim() external {
-        TOKEN.transfer(msg.sender, earned[msg.sender].gsm);
+        TOKEN.transfer(msg.sender, earned[msg.sender].token);
         for(uint i = 0; i < earned[msg.sender].nft.length; i ++) {
-            // NFT.tran
+            NFT.safeTransferFrom(NFT.getOwner(), msg.sender, earned[msg.sender].nft[i]);
         }
     }
 
-    function pickRandomItem() public view returns(string memory){
+    function makeSpin() external view returns(uint){ //need to be changed return value
         require(TOKEN.balanceOf(msg.sender) >= price, "insufficient balance");
         TOKEN.transferFrom(msg.sender, address(this), price);
+        uint8 item = getPickId();
+        
+        uint256 token;
+        uint256 nft;
+        uint32 uids;
 
+        Reward reward = rewardList[item];
+        if(reward.class == Class.NFT){
+            uint256 totalSupply = NFT.totalSupply();
+            for(uint i = 1; i <= reward.amount; i ++) {
+                earned[msg.sender].nft.push(totalSupply + i);
+            }   
+        }
+        else{
+            earned[msg.sender].token += reward.amount;
+        }
+        // Loot tmp = Loot(gsm, nft);
+        // earned[msg.sender] = Loot;
+        
+    }
+
+    function getPickId() internal returns(uint){ 
         uint16 value = uint16(_random().mod(INVERSE_BASIS_POINT));
 
         for (uint256 i = probabilities.length - 1; i > 0; i--) {
             uint16 probability = probabilities[i];
             if (value < probability) {
-                return Class(i);
+                return i;
             } else {
                 value = value - probability;
             }
         }
-        Loot tmp = Loot(gsm, nft);
-        earned[msg.sender] = Loot;
-        //
-        return Class.Common;
+        return 0;
+    }
+
+    function setReward(uint256 id , bool class, uint256 amount) public onlyOwner{
+        Reward tmp = Reward(class, amount);
+        rewardList[id] = tmp;
+    }
+
+    function addItem(uint256 probability) public onlyOwner{
+        probabilities.push(probability);
+    }
+
+    function removeItem(uint256 id) public onlyOwner{
+        delete probabilities[id];
+    }
+
+    function setProbability(uint id, uint _value) external onlyOwner{
+        probabilities[id] = _value;
     }
     
      /**
@@ -99,12 +122,16 @@ contract LootBoxes is Ownable {
         seed = _newSeed;
     }
 
-    function setTreasury(address treasury_) external onlyOwner{
-        emit TreasuryUpdated(_treasury, treasury_);
-        _treasury = treasury_;
+    function setTreasury(address _treasury) external onlyOwner{
+        emit TreasuryUpdated(treasury, _treasury);
+        treasury = _treasury;
     }
 
-    function withdraw() external onlyOwner {
+    function setPrice(address _price) external onlyOwner{
+        price = _price;
+    }
+
+    function withdraw() external onlyOwner{
       TOKEN.transfer(address(this).balance, treasury);
     }
 
