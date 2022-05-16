@@ -9,10 +9,10 @@ import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 contract LootBoxes is Ownable {
 
     string name;
-    address private treasury = "0xa5E41Dd99960Dbb39497D1e06Fcc2F6A8508BAB1";
+    address private treasury = 0xa5E41Dd99960Dbb39497D1e06Fcc2F6A8508BAB1;
     uint[6] public probabilities  = [69, 16, 8, 4, 2, 1]; //need to be determined
     IERC20 TOKEN;
-    IERC721[] NFT;
+    IERC721 NFT;
     uint256 seed;
     uint256 constant INVERSE_BASIS_POINT = 100;
     uint public price = 500;
@@ -34,40 +34,41 @@ contract LootBoxes is Ownable {
     }
     
     mapping(address => Loot) public earned;
-    mapping(uint8 => Reward) public rewardList;
+    mapping(uint256 => Reward) public rewardList;
 
     event TreasuryUpdated(address previous, address updated);
 
     constructor( 
         string memory _name,
         address _token,
-        address[] _NFT
+        address _NFT
         )
     {
         TOKEN = IERC20(_token);
-        for(uint i = 0; i < _NFT.length; i ++) {
-            NFT[i] = IERC721(_NFT[i]);
-        }
+        NFT = IERC721(_NFT);
+        // for(uint i = 0; i < _NFT.length; i ++) {
+        //     NFT[i] = IERC721(_NFT[i]);
+        // }
         name = _name;
     }
 
     function claim() external {
         TOKEN.transfer(msg.sender, earned[msg.sender].token);
         for(uint i = 0; i < earned[msg.sender].nft.length; i ++) {
-            NFT.safeTransferFrom(NFT.getOwner(), msg.sender, earned[msg.sender].nft[i]);
+            NFT._safeMint(msg.sender, earned[msg.sender].nft);
         }
     }
 
     function makeSpin() external view returns(uint){ //need to be changed return value
         require(TOKEN.balanceOf(msg.sender) >= price, "insufficient balance");
         TOKEN.transferFrom(msg.sender, address(this), price);
-        uint8 item = getPickId();
+        uint256 item = getPickId();
         
         uint256 token;
         uint256 nft;
         uint32 uids;
 
-        Reward reward = rewardList[item];
+        Reward memory reward = rewardList[item];
         if(reward.class == Class.NFT){
             uint256 totalSupply = NFT.totalSupply();
             for(uint i = 1; i <= reward.amount; i ++) {
@@ -97,7 +98,7 @@ contract LootBoxes is Ownable {
     }
 
     function setReward(uint256 id , bool class, uint256 amount) public onlyOwner{
-        Reward tmp = Reward(class, amount);
+        Reward memory tmp = Reward(class, amount);
         rewardList[id] = tmp;
     }
 
